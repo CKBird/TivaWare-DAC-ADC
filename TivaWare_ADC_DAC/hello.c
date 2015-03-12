@@ -26,9 +26,14 @@
 
 volatile uint32_t ADCValues[128];
 volatile int ADCIndex = 0;
+volatile uint32_t sum = 0;
+volatile uint32_t average = 0;
+volatile uint32_t onescomp = 0;
+volatile uint16_t sendA = 0x0900;
+volatile uint16_t sendB = 0x0A00;
+volatile uint8_t aver = 0;
+volatile uint8_t ones = 0;
 
-#define sendA 253
-#define sendB 254
 
 void ConfigureUART0(void) //Config local UART for Teraterm/Console use
 {
@@ -61,44 +66,43 @@ void ConfigureUART0(void) //Config local UART for Teraterm/Console use
 }*/
 
 void ConfigureSSI (void) 
-{ //Configure SSI for OLED
-	//Configure muxs to enable special pin functions
+{ 
+	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_SSI0);
 	GPIOPinConfigure(GPIO_PA2_SSI0CLK);
 	GPIOPinConfigure(GPIO_PA3_SSI0FSS);
-	//GPIOPinConfigure(GPIO_PA4_SSI0RX);
+	GPIOPinConfigure(GPIO_PA4_SSI0RX);
 	GPIOPinConfigure(GPIO_PA5_SSI0TX);
 
 	//Configure pins for SSI
-	ROM_GPIOPinTypeSSI(GPIO_PORTA_BASE, GPIO_PIN_5 | GPIO_PIN_3 | GPIO_PIN_2);
+	ROM_GPIOPinTypeSSI(GPIO_PORTA_BASE, GPIO_PIN_5 | GPIO_PIN_4 | GPIO_PIN_3 | GPIO_PIN_2);
 	//Set to master mode (SPI), 8 bit data
-	ROM_SSIConfigSetExpClk(SSI0_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, 1000000, 8);
-	UARTprintf("OEU");
+	ROM_SSIConfigSetExpClk(SSI0_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, 2000000, 16);
 
 	//Enable SSI
 	ROM_SSIEnable(SSI0_BASE);
 }
 
-void ConfigureTimer0()
+void ConfigureTimer0ADC()
 {
 	//Timer Configure and enable
   	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-  	ROM_TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
+		SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
+		SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+		GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_3);
+		ADCSequenceConfigure(ADC0_BASE, 3, ADC_TRIGGER_TIMER, 0);
+		ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END);
+		ADCSequenceEnable(ADC0_BASE, 3);
+		ADCIntClear(ADC0_BASE, 3);
+		ROM_TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
   	ROM_TimerControlTrigger(TIMER0_BASE, TIMER_A, true);
-		ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, (SysCtlClockGet()-1)/10000); //Should give 10KHz
+		ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, (SysCtlClockGet())/30000); //Should give 10KHz
   	//ROM_IntEnable(INT_TIMER0A);
   	//ROM_TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 }
 
-void ConfigureADC()
+/*void ConfigureADC()
 {
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
-	GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_3);
-	ADCSequenceConfigure(ADC0_BASE, 3, ADC_TRIGGER_TIMER, 0);
-	ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END);
-	ADCSequenceEnable(ADC0_BASE, 3);
-	ADCIntClear(ADC0_BASE, 3);
-}
+}*/
 
 void ConfigureSwitches()
 {
@@ -115,12 +119,32 @@ void ConfigureSwitches()
 
 void ADCINT_Handler ()
 {
-	UARTprintf("A");
+	//UARTprintf("A");
 	ADCIntClear(ADC0_BASE, 3);
 	ADCSequenceDataGet(ADC0_BASE, 3, &ADCValues[ADCIndex]);
 	ADCIndex++;
 	if(ADCIndex > 127) //Circular Index
 		ADCIndex = 0;
+	
+	sum = ADCValues[ADCIndex - 1] + ADCValues[ADCIndex - 2] + ADCValues[ADCIndex - 3] + ADCValues[ADCIndex - 4];
+	average = sum / 4;
+	onescomp = ~average;
+		
+	aver = (average >> 4) & 0xFF;
+	ones = (onescomp >> 4) & 0xFF;
+	
+	//aver = 0xFF;
+	//ones = 0xFF;
+	
+	uint32_t dataA = sendA | aver;
+	uint32_t dataB = sendB | ones;
+		
+ 	SSIDataPut(SSI0_BASE, dataA);
+ 	while(SSIBusy(SSI0_BASE));
+
+ 	SSIDataPut(SSI0_BASE, dataB);
+ 	while(SSIBusy(SSI0_BASE));
+	
 }
 
 int main (void) {
@@ -133,7 +157,7 @@ int main (void) {
   //Configure chosen pin for interrupts
   //ROM_GPIOIntTypeSet(GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_BOTH_EDGES); //Interrupt triggered on both edges (rising/falling distinguished in interrupt handler)
 
-  //Enable interrupts (on pin, port, and master)
+ 	//Enable interrupts (on pin, port, and master)
   //GPIOIntEnable(GPIO_PORTB_BASE, GPIO_PIN_7);
   //ROM_IntEnable(INT_GPIOB); 
   
@@ -141,52 +165,32 @@ int main (void) {
 	UARTprintf("Turning on now\n");
   //ConfigureUART1(); 				//Configure Rx/Tx
 	ConfigureSSI(); 						//Configure DAC
-		UARTprintf("OEU");
-
-	ConfigureTimer0(); 					//Configure Timer
-	ConfigureADC();							//Configure ADC
 	ConfigureSwitches();				//Configure Switches
+	ConfigureTimer0ADC(); 					//Configure Timer
+	ROM_TimerEnable(TIMER0_BASE, TIMER_A);
 	//ROM_IntEnable(INT_UART1);
   //ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);   
-	ROM_IntEnable(INT_ADC0SS3);
 	ROM_ADCIntEnable(ADC0_BASE, 3);
-	ROM_TimerEnable(TIMER0_BASE, TIMER_A);  	
-  
+	ROM_IntEnable(INT_ADC0SS3);  	
+	
 	ROM_IntMasterEnable();
-
-	int sw_input;
+	
+	//int sw_input;
+	
  	while(1)
- 	{
- 		do {
- 			UARTprintf("1");
-			sw_input = ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_4);
- 		} while ((sw_input & 0x10) == 0x10);
-
-		UARTprintf("CONFUSION");
+ 	{	
+		//UARTprintf("Aver: %d, Ones: %d\n", aver, ones);
 		
- 		uint32_t sum = ADCValues[ADCIndex - 1] + ADCValues[ADCIndex - 2] + ADCValues[ADCIndex - 3] + ADCValues[ADCIndex - 4];
- 		uint32_t average = sum / 4;
- 		uint32_t onescomp = ~average;
-
- 		for(int i = 0; i < 127; i++)
- 		{
- 			if(i % 8 == 0)
- 				UARTprintf("\n");
- 			UARTprintf("%d", ADCValues[i]);
- 		}
-
- 		UARTprintf("Average of Last 4: %d \nOnes Complement of Average: %d", average, onescomp);
-
- 		SSIDataPut(SSI0_BASE, sendA); //These 4 may not work...
- 		while(SSIBusy(SSI0_BASE));
-
- 		SSIDataPut(SSI0_BASE, average);
- 		while(SSIBusy(SSI0_BASE));
-
- 		SSIDataPut(SSI0_BASE, sendB);
- 		while(SSIBusy(SSI0_BASE));
-
- 		SSIDataPut(SSI0_BASE, onescomp);
- 		while(SSIBusy(SSI0_BASE));
+		if((ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_4) & 0x10) != 0x10)
+		{
+			for(int i = 0; i < 127; i++)
+			{
+				if(i % 8 == 0)
+					UARTprintf("\n");
+				UARTprintf("%d ", ADCValues[i]);
+			}
+	
+			UARTprintf("Average of Last 4: %d \nOnes Complement of Average: %d", average, onescomp);
+		}
  	}
 }

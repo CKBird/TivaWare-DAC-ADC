@@ -112,10 +112,10 @@ __Vectors
         DCD     IntDefaultHandler           ; PWM Generator 1
         DCD     IntDefaultHandler           ; PWM Generator 2
         DCD     IntDefaultHandler           ; Quadrature Encoder 0
-        DCD     ADCINT_Handler		        ; ADC Sequence 0
+        DCD     IntDefaultHandler		        ; ADC Sequence 0
         DCD     IntDefaultHandler           ; ADC Sequence 1
         DCD     IntDefaultHandler           ; ADC Sequence 2
-        DCD     IntDefaultHandler           ; ADC Sequence 3
+        DCD     ADCINT_Handler           ; ADC Sequence 3
         DCD     IntDefaultHandler           ; Watchdog timer
         DCD     IntDefaultHandler			;Timer0INT_Handler           ; Timer 0 subtimer A
         DCD     IntDefaultHandler           ; Timer 0 subtimer B
