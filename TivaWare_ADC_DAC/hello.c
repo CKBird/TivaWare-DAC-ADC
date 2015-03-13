@@ -25,6 +25,12 @@
 //#include "glcdfont.c"
 
 volatile uint32_t ADCValues[128];
+volatile uint32_t ADCValuesPing[128];
+volatile uint32_t ADCValuesPong[128];
+volatile bool pong = false;
+volatile int slope = 0;
+volatile int oldSlope = 0;
+volatile int ticks = 0;
 volatile int ADCIndex = 0;
 volatile uint32_t sum = 0;
 volatile uint32_t average = 0;
@@ -120,6 +126,7 @@ void ConfigureSwitches()
 void ADCINT_Handler ()
 {
 	//UARTprintf("A");
+	/* PART 1
 	ADCIntClear(ADC0_BASE, 3);
 	ADCSequenceDataGet(ADC0_BASE, 3, &ADCValues[ADCIndex]);
 	ADCIndex++;
@@ -129,7 +136,33 @@ void ADCINT_Handler ()
 	sum = ADCValues[ADCIndex - 1] + ADCValues[ADCIndex - 2] + ADCValues[ADCIndex - 3] + ADCValues[ADCIndex - 4];
 	average = sum / 4;
 	onescomp = ~average;
-		
+	*/
+	
+	ADCIntClear(ADC0_BASE, 3);
+	if(ADCIndex == 128)
+	{
+		ADCIndex = 0;
+		if(pong == true)
+			pong = false;
+		else
+			pong = true;
+	}
+	if(pong)
+	{
+		ADCSequenceDataGet(ADC0_BASE, 3, &ADCValuesPong[ADCIndex]);
+		sum = ADCValuesPong[ADCIndex - 1] + ADCValuesPong[ADCIndex - 2] + ADCValuesPong[ADCIndex - 3] + ADCValuesPong[ADCIndex - 4];
+	}
+	else
+	{	
+		ADCSequenceDataGet(ADC0_BASE, 3, &ADCValuesPing[ADCIndex]);
+		sum = ADCValuesPing[ADCIndex - 1] + ADCValuesPing[ADCIndex - 2] + ADCValuesPing[ADCIndex - 3] + ADCValuesPing[ADCIndex - 4];
+	}
+	
+	ADCIndex++;
+	
+	average = sum / 4;
+	onescomp = ~average;
+	
 	aver = (average >> 4) & 0xFF;
 	ones = (onescomp >> 4) & 0xFF;
 	
@@ -167,10 +200,10 @@ int main (void) {
 	ConfigureSSI(); 						//Configure DAC
 	ConfigureSwitches();				//Configure Switches
 	ConfigureTimer0ADC(); 					//Configure Timer
-	ROM_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);    
-	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1);
-  ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_PIN_1);
+	//ROM_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);    
+	//ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+	//ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1);
+  //ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_PIN_1);
 	ROM_TimerEnable(TIMER0_BASE, TIMER_A);
 	//ROM_IntEnable(INT_UART1);
   //ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);   
@@ -183,22 +216,105 @@ int main (void) {
 	
  	while(1)
  	{	
+		//UARTprintf("Stuff");
 		//UARTprintf("Aver: %d, Ones: %d\n", aver, ones);
-		
+		int x = 0;
+		int count = 0;
+		double lows = 0.0;
+		bool found = false;
+		double freq = 0;
+		if(!pong)
+		{
+			for(int i = 60; i < 100; i++)
+				if(ADCValuesPing[i] > x)
+					x = ADCValuesPing[i]; //Get Highest value
+			//After for is complete, x = highest value
+			for(int i = 60; i < 100; i++)
+			{
+				if(ADCValuesPing[i] == x)
+					found = true;
+				if(found)
+					if(ADCValuesPing[i] != x)
+					{	
+						lows++;
+						found = false;
+					}
+			}
+			//Lows contains number of low values
+			//UARTprintf("Lows: %d\n", lows);
+			for(int i = 60; i < 100; i++)
+			{
+				if(ADCValuesPing[i] >= (x-10))
+					count++;
+			}
+		}
+		else
+		{
+			for(int i = 60; i < 100; i++)
+				if(ADCValuesPong[i] > x)
+					x = ADCValuesPong[i]; //Get Highest value
+			//After for is complete, x = highest value
+			for(int i = 60; i < 100; i++)
+			{
+				if(ADCValuesPong[i] == x)
+					found = true;
+				if(found)
+					if(ADCValuesPong[i] != x)
+				{				
+						lows++;
+						found = false;
+				}
+			}
+			//Lows contains number of low values
+			for(int i = 60; i < 100; i++)
+			{
+				if(ADCValuesPong[i] >= (x-10))
+					count++;
+			}
+		}
+		//UARTprintf("Lows: %d\n", lows);
+			
+		if(ticks % 10000 == 0)
+		{
+			//lows *= 2.0; //# of samples in one period * sampling rate
+			//lows /= 10000.0;
+			//freq = 1.0/lows;
+			//UARTprintf("Frequency: %f\n", freq);
+			if(count >= 30)
+				UARTprintf("Sq\n");
+			else if(count >= 15)
+				UARTprintf("Sin\n");
+			else
+				UARTprintf("Tri\n");
+		}
 		if((ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_4) & 0x10) != 0x10)
 		{
-			for(int i = 0; i < 127; i++)
+			/*for(int i = 0; i < 127; i++)
 			{
 				if(i % 8 == 0)
 					UARTprintf("\n");
 				UARTprintf("%d ", ADCValues[i]);
+			}*/
+			UARTprintf("Ping: \n");
+			for(int i = 0; i < 128; i++)
+			{
+				if(i % 8 == 0)
+					UARTprintf("\n");
+				UARTprintf("%d ", ADCValuesPing[i]);
 			}
-	
+			UARTprintf("Pong: \n");
+			for(int i = 0; i < 128; i++)
+			{
+				if(i % 8 == 0)
+					UARTprintf("\n");
+				UARTprintf("%d ", ADCValuesPong[i]);
+			}
 		UARTprintf("Average of Last 4: %d \nOnes Complement of Average: %d", average, onescomp);
 		}
-		if (!ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_1)) 
+		/*if (!ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_1)) 
 			ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_PIN_1);
 		else
-			ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0);
- 	}
+			ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0);*/
+ 	ticks++;
+	}
 }
