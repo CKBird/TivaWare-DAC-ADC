@@ -167,6 +167,10 @@ int main (void) {
 	ConfigureSSI(); 						//Configure DAC
 	ConfigureSwitches();				//Configure Switches
 	ConfigureTimer0ADC(); 					//Configure Timer
+	ROM_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);    
+	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1);
+  ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_PIN_1);
 	ROM_TimerEnable(TIMER0_BASE, TIMER_A);
 	//ROM_IntEnable(INT_UART1);
   //ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);   
@@ -190,7 +194,11 @@ int main (void) {
 				UARTprintf("%d ", ADCValues[i]);
 			}
 	
-			UARTprintf("Average of Last 4: %d \nOnes Complement of Average: %d", average, onescomp);
+		UARTprintf("Average of Last 4: %d \nOnes Complement of Average: %d", average, onescomp);
 		}
+		if (!ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_1)) 
+			ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_PIN_1);
+		else
+			ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0);
  	}
 }
